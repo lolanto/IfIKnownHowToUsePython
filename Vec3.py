@@ -31,6 +31,12 @@ class Vec3:
             raise TypeError(type(scalar_value))
         return Vec3(self.x * scalar_value, self.y * scalar_value, self.z * scalar_value)
 
+    def __neg__(self):
+        return Vec3(-self.x, -self.y, -self.z)
+
+    def __str__(self) -> str:
+        return '({0}, {1}, {2})'.format(self.x, self.y, self.z)
+
     @staticmethod
     def Dot(a, b):
         return a.x * b.x + a.y * b.y + a.z * b.z
@@ -114,5 +120,12 @@ if __name__ == '__main__':
             self.assertEqual(b.z, 0)
             with self.assertRaises(ZeroDivisionError):
                 Vec3.Normalize(Vec3())
+
+        def test_neg(self):
+            a = Vec3(1, 2, 3)
+            b = -a
+            self.assertEqual(b.x, -1)
+            self.assertEqual(b.y, -2)
+            self.assertEqual(b.z, -3)
 
     unittest.main()

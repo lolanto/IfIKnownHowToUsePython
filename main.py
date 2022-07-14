@@ -1,6 +1,9 @@
 import math
-import sys
+import Material
 import time
+from Plane import Plane
+from Ray import *
+from Sphere import *
 from Vec3 import *
 
 class Vec2:
@@ -20,7 +23,7 @@ class Film:
             raise IndexError()
         return self.data[x + self.width * y]
 
-    def write(self, x = int, y = int, value = Vec3) -> None:
+    def write(self, x : int, y : int, value : Vec3) -> None:
         if y >= self.height or y < 0 or x >= self.width or x < 0:
             raise IndexError()
         self.data[x + self.width * y] = value
@@ -45,12 +48,6 @@ class Film:
                 f.write('\n')
         return True
 
-class Ray:
-    def __init__(self, origin = Vec3, direction = Vec3) -> None:
-        self.origin = origin
-        self.direction = direction
-        pass
-
 class Scene:
     def __init__(self) -> None:
         self.object_list = []
@@ -60,12 +57,17 @@ class Scene:
         self.object_list.append(object)
 
     def eval(self, ray = Ray) -> Vec3:
+        mint = float('inf')
+        material = None
         for obj in self.object_list:
             t = obj.hit_test(ray)
-            if t < 0:
-                return Vec3()
-            else:
-                return Vec3(0.2, 0.4, 0.6)
+            if t < mint:
+                mint = t
+                material = obj.get_material()
+        if mint < 1e3:
+            return material.eval()
+        else:
+            return Vec3()
 
 class Camera:
     def __init__(self, pos = Vec3, dir = Vec3, focal_length = float, film = Film, film_width = float) -> None:
@@ -88,65 +90,51 @@ class Camera:
         FILM_HEIGHT_PIX = self.film.height
         OFFSET_HORIZON_WOR = self.film_size.x / FILM_WIDTH_PIX
         OFFSET_VERTICAL_WOR = self.film_size.y / FILM_HEIGHT_PIX
-        FILM_CENTER_WOR = self.pos - self.forward * self.focal_length
+        FILM_LEFT_TOP_WOR = self.pos + self.forward * self.focal_length - self.right * (OFFSET_HORIZON_WOR * (FILM_WIDTH_PIX // 2)) + self.upward * (OFFSET_VERTICAL_WOR * (FILM_HEIGHT_PIX // 2))
         if self.scene is None:
             self.film.save('./result')
             return
-        for y in range(-FILM_HEIGHT_PIX // 2, FILM_HEIGHT_PIX // 2, 1):
-            for x in range(-FILM_WIDTH_PIX // 2, FILM_WIDTH_PIX // 2, 1):
-                origin = FILM_CENTER_WOR + self.right * OFFSET_HORIZON_WOR * x + self.upward * OFFSET_VERTICAL_WOR * y
-                direction = Vec3.Normalize(self.pos - origin)
+        for y in range(0, FILM_HEIGHT_PIX, 1):
+            for x in range(0, FILM_WIDTH_PIX, 1):
+                origin = FILM_LEFT_TOP_WOR + self.right * OFFSET_HORIZON_WOR * x - self.upward * OFFSET_VERTICAL_WOR * y
+                direction = Vec3.Normalize(origin - self.pos)
                 new_ray = Ray(origin, direction)
                 result = self.scene.eval(new_ray)
-                self.film.write(x + FILM_WIDTH_PIX // 2, y + FILM_HEIGHT_PIX // 2, result)
+                self.film.write(x, y, result)
         self.film.save('./result')
 
     def central_ray(self) -> Ray:
-        FILM_CENTER_WOR = self.pos - self.forward * self.focal_length
+        FILM_CENTER_WOR = self.pos + self.forward * self.focal_length
         origin = FILM_CENTER_WOR
-        direction = Vec3.Normalize(self.pos - origin)
+        direction = Vec3.Normalize(origin - self.pos)
         return Ray(origin, direction)
 
-class Sphere:
-    def __init__(self, origin : Vec3, radius : float) -> None:
-        self.origin = origin
-        self.radius = radius
+    def debug_get_ray(self, pix_pos_x, pix_pos_y) -> Ray:
+        FILM_WIDTH_PIX = self.film.width
+        FILM_HEIGHT_PIX = self.film.height
+        OFFSET_HORIZON_WOR = self.film_size.x / FILM_WIDTH_PIX
+        OFFSET_VERTICAL_WOR = self.film_size.y / FILM_HEIGHT_PIX
+        FILM_LEFT_TOP_WOR = self.pos + self.forward * self.focal_length - self.right * (OFFSET_HORIZON_WOR * (FILM_WIDTH_PIX // 2)) + self.upward * (OFFSET_VERTICAL_WOR * (FILM_HEIGHT_PIX // 2))
+        origin = FILM_LEFT_TOP_WOR + self.right * OFFSET_HORIZON_WOR * pix_pos_x - self.upward * OFFSET_VERTICAL_WOR * pix_pos_y
+        direction = Vec3.Normalize(origin - self.pos)
+        return Ray(origin, direction)
 
-    def is_inside(self, point) -> bool:
-        dist = self.origin - point
-        if dist.length() > self.radius:
-            return False
-        else:
-            return True
-
-    def hit_test(self, ray = Ray) -> float:
-        offset_v = ray.origin - self.origin
-        a = Vec3.Dot(offset_v, offset_v)
-        b = Vec3.Dot(offset_v, ray.direction)
-        c = Vec3.Dot(ray.direction, ray.direction)
-        if math.fabs(2 * c) < 1e-7:
-            return -1
-        b2_4ac = 4 * b * b - 4 * c * (a - self.radius * self.radius)
-        if b2_4ac < 0:
-            return -1
-        s = math.sqrt(b2_4ac)
-        t1 = (-2 * b + s) / (2 * c)
-        t2 = (-2 * b - s) / (2 * c)
-        if t2 > 0:
-            return t2
-        elif t1 > 0:
-            return t1
-        return -1
 
 if __name__ == '__main__':
     WIDTH = 512
     HEIGHT = 512
     F = Film(WIDTH, HEIGHT)
-    C = Camera(Vec3(), Vec3(0, 0, 1), 0.001, F, 0.01)
+    my_position = Vec3(0, 1.7, -10)
+    look_at = Vec3(0, 0, 0)
+    direction = Vec3.Normalize(look_at - my_position)
+    C = Camera(my_position, direction, 0.009, F, 0.01)
+    # print(C.debug_get_ray(128, 256))
     S = Scene()
-    Sp = Sphere(Vec3(0, 0, 5), 1)
+    Sp = Sphere(Vec3(0.5, 0.5, 0.5), 0.5)
+    Sp.set_material(Material.Unlit(Vec3(1.0, 0, 0)))
     S.add_object(Sp)
-    r = C.central_ray()
+    Pp = Plane(Vec3(0, 0, 0), Vec3(0, 1, 0), 10, 10)
+    Pp.set_material(Material.Unlit(Vec3(0.0, 1.0, 0.0)))
+    S.add_object(Pp)
     C.put_in_scene(S)
-    C.shoot()
-    
+    C.shoot()    
